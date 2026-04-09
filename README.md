@@ -4,6 +4,10 @@
 
 **Node.js:** >= 20.
 
+## Деплой (Render)
+
+Публичный инстанс: [https://green-api-nest.onrender.com/](https://green-api-nest.onrender.com/) — веб-панель на `/`, JSON API на том же origin: `POST https://green-api-nest.onrender.com/api/v1/green-api/...` (`get-settings`, `get-state-instance`, и т.д.). На бесплатном тарифе Render возможен «cold start» после простоя.
+
 ## Проверка перед ревью
 
 ```bash
