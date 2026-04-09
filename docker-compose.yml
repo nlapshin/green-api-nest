@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DEFAULT_API_URL: https://api.greenapi.com
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 30000
+      TRUST_PROXY: "false"
+    restart: unless-stopped
