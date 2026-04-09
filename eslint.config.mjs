@@ -8,6 +8,12 @@ export default tseslint.config(
     ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
   },
   {
+    files: ['src/green-api/sanitize-text.ts'],
+    rules: {
+      'no-control-regex': 'off',
+    },
+  },
+  {
     rules: {
       '@typescript-eslint/interface-name-prefix': 'off',
       '@typescript-eslint/explicit-function-return-type': 'off',

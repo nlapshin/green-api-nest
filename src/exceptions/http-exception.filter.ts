@@ -8,10 +8,34 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AppException } from '../errors/app.exception';
-import { ErrorCodes } from '../errors/error-codes';
+import { ErrorCodes, type ErrorCode } from '../errors/error-codes';
 import { errorEnvelope } from '../response/api-response';
 import { getRequestIdForMeta } from '../logging/request-id';
 import { ZodValidationException } from '../validation/zod-validation.exception';
+
+function errorCodeForHttpStatus(status: number): ErrorCode {
+  switch (status) {
+    case HttpStatus.BAD_REQUEST:
+      return ErrorCodes.BAD_REQUEST;
+    case HttpStatus.UNAUTHORIZED:
+      return ErrorCodes.UNAUTHORIZED;
+    case HttpStatus.FORBIDDEN:
+      return ErrorCodes.FORBIDDEN;
+    case HttpStatus.NOT_FOUND:
+      return ErrorCodes.NOT_FOUND;
+    case HttpStatus.TOO_MANY_REQUESTS:
+      return ErrorCodes.INBOUND_RATE_LIMIT;
+    default:
+      if (status >= 500) {
+        return ErrorCodes.INTERNAL_ERROR;
+      }
+      return ErrorCodes.BAD_REQUEST;
+  }
+}
+
+function isUpstreamCode(code: ErrorCode): boolean {
+  return code.startsWith('UPSTREAM_');
+}
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -35,9 +59,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     if (exception instanceof AppException) {
-      if (exception.internalCause && exception.code === ErrorCodes.INTERNAL_ERROR) {
+      if (
+        exception.internalCause &&
+        exception.code === ErrorCodes.INTERNAL_ERROR
+      ) {
         this.logger.error(
           { err: exception.internalCause, requestId },
+          exception.message,
+        );
+      } else if (isUpstreamCode(exception.code)) {
+        this.logger.warn(
+          { requestId, code: exception.code },
           exception.message,
         );
       }
@@ -63,10 +95,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
       res.status(status).send(
         errorEnvelope(requestId, {
-          code:
-            status === HttpStatus.TOO_MANY_REQUESTS
-              ? ErrorCodes.INBOUND_RATE_LIMIT
-              : 'HTTP_EXCEPTION',
+          code: errorCodeForHttpStatus(status),
           message,
         }),
       );

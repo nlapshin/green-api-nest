@@ -1,100 +1,115 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GREEN-API Console</title>
-    <link rel="stylesheet" href="/static/styles.css" />
-  </head>
-  <body>
-    <header class="app-header">
-      <div class="brand">
-        <span class="brand__title">GREEN-API</span>
-        <span class="brand__subtitle">integration gateway · local UI</span>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Green-API — панель</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body>
+  <div class="page" data-api-base="{{apiBase}}">
+    <div class="chrome">
+      <div class="chrome__bar">
+        <div class="chrome__dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="chrome__title">Green-API</div>
       </div>
-    </header>
 
-    <main class="layout" data-api-base="{{apiBase}}">
-      <section class="panel panel--actions" aria-label="Действия">
-        <h2 class="panel__heading">Действия</h2>
+      <header class="header">
+        <div class="header__title">GREEN-API</div>
+      </header>
 
-        <fieldset class="field-group">
-          <legend>Учётные данные инстанса</legend>
-          <label class="field">
-            <span class="field__label">idInstance</span>
-            <input id="idInstance" name="idInstance" type="text" inputmode="numeric" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field__label">apiTokenInstance</span>
-            <input id="apiTokenInstance" name="apiTokenInstance" type="password" autocomplete="off" />
-          </label>
-        </fieldset>
-
-        <div class="actions-row">
-          <button type="button" class="btn" data-action="get-settings">getSettings</button>
-          <button type="button" class="btn" data-action="get-state-instance">getStateInstance</button>
-        </div>
-
-        <fieldset class="field-group">
-          <legend>sendMessage</legend>
-          <label class="field">
-            <span class="field__label">chatId</span>
-            <input id="chatIdMessage" type="text" placeholder="79001234567@c.us" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field__label">message</span>
-            <textarea id="messageBody" rows="4" autocomplete="off"></textarea>
-          </label>
-          <button type="button" class="btn btn--primary" data-action="send-message">sendMessage</button>
-        </fieldset>
-
-        <fieldset class="field-group">
-          <legend>sendFileByUrl</legend>
-          <label class="field">
-            <span class="field__label">chatId</span>
-            <input id="chatIdFile" type="text" placeholder="79001234567@c.us" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field__label">fileUrl</span>
-            <input id="fileUrl" type="url" placeholder="https://example.com/file.pdf" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field__label">fileName (optional)</span>
-            <input id="fileName" type="text" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field__label">caption (optional)</span>
-            <textarea id="caption" rows="2" autocomplete="off"></textarea>
-          </label>
-          <button type="button" class="btn btn--primary" data-action="send-file-by-url">sendFileByUrl</button>
-        </fieldset>
-      </section>
-
-      <section class="panel panel--response" aria-label="Ответ">
-        <div class="response-toolbar">
-          <h2 class="panel__heading">Ответ</h2>
-          <div class="response-meta">
-            <span id="lastStatus" class="badge badge--muted">idle</span>
-            <span id="lastDuration" class="muted"></span>
+      <main class="layout">
+        <section class="panel panel--left">
+          <div class="section">
+            <div class="section__title">Подключение</div>
+            <div class="stack">
+              <label class="field">
+                <span class="field__label">idInstance</span>
+                <input class="field__input" id="idInstance" type="text" autocomplete="off" placeholder="1101…" />
+              </label>
+              <label class="field">
+                <span class="field__label">apiTokenInstance</span>
+                <input class="field__input" id="apiTokenInstance" type="password" autocomplete="off"
+                  placeholder="ваш токен" />
+              </label>
+            </div>
           </div>
-          <div class="response-actions">
-            <button type="button" class="btn btn--ghost" id="copyResponse">Копировать</button>
-            <button type="button" class="btn btn--ghost" id="clearResponse">Очистить</button>
+
+          <div class="section">
+            <div class="section__title">GET</div>
+            <div class="actions">
+              <button class="btn" type="button" data-action="getSettings">getSettings</button>
+              <button class="btn" type="button" data-action="getStateInstance">getStateInstance</button>
+            </div>
           </div>
-        </div>
-        <textarea
-          id="responseBody"
-          class="response-body"
-          readonly
-          rows="24"
-          spellcheck="false"
-          aria-readonly="true"
-        ></textarea>
-      </section>
-    </main>
 
-    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+          <div class="section">
+            <div class="section__title">sendMessage</div>
+            <div class="stack">
+              <label class="field">
+                <span class="field__label">chatId</span>
+                <input class="field__input" id="sm_chatId" type="text" autocomplete="off"
+                  placeholder="77771234567@c.us" />
+              </label>
+              <label class="field">
+                <span class="field__label">message</span>
+                <textarea class="field__input field__input--textarea" id="sm_message" rows="4"
+                  placeholder="Hello World!"></textarea>
+              </label>
+            </div>
+            <div class="actions">
+              <button class="btn btn--primary" type="button" data-action="sendMessage">sendMessage</button>
+            </div>
+          </div>
 
-    <script src="/static/app.js" type="module"></script>
-  </body>
+          <div class="section">
+            <div class="section__title">sendFileByUrl</div>
+            <div class="stack">
+              <label class="field">
+                <span class="field__label">chatId</span>
+                <input class="field__input" id="sf_chatId" type="text" autocomplete="off"
+                  placeholder="77771234567@c.us" />
+              </label>
+              <label class="field">
+                <span class="field__label">fileUrl</span>
+                <input class="field__input" id="sf_fileUrl" type="url" autocomplete="off"
+                  placeholder="https://my.site.com/img/horse.png" />
+              </label>
+              <label class="field">
+                <span class="field__label">fileName</span>
+                <input class="field__input" id="sf_fileName" type="text" autocomplete="off" placeholder="horse.png"
+                  required />
+              </label>
+              <label class="field">
+                <span class="field__label">caption (optional)</span>
+                <input class="field__input" id="sf_caption" type="text" autocomplete="off"
+                  placeholder="Подпись к файлу" />
+              </label>
+            </div>
+            <div class="actions">
+              <button class="btn btn--primary" type="button" data-action="sendFileByUrl">sendFileByUrl</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel--right">
+          <div class="response-pane">
+            <div class="response-pane__head">
+              <span class="response-pane__label">Ответ</span>
+              <span class="status" id="status"></span>
+            </div>
+            <pre class="output" id="output" aria-label="Ответ API"></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+
 </html>

@@ -10,7 +10,7 @@ export class ZodValidationException extends AppException {
       message: 'Validation failed',
       exposeMessage: 'Validation failed',
       details: issues.map((i) => ({
-        path: i.path.join('.') || '(root)',
+        field: i.path.join('.') || '(root)',
         message: i.message,
         code: i.code,
       })),

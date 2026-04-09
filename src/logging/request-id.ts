@@ -3,9 +3,6 @@ import type { FastifyRequest } from 'fastify';
 
 type FastifyRequestWithId = FastifyRequest & { id?: string };
 
-/**
- * Reads `x-request-id` or `x-correlation-id` (string or first array element).
- */
 export function readRequestIdFromHeaders(
   headers: IncomingHttpHeaders,
 ): string | undefined {
@@ -19,9 +16,6 @@ export function readRequestIdFromHeaders(
   return undefined;
 }
 
-/**
- * For JSON envelopes and errors: inbound header id, then Fastify `req.id`, then a fallback.
- */
 export function getRequestIdForMeta(req: FastifyRequest): string {
   return (
     readRequestIdFromHeaders(req.headers) ??
@@ -30,12 +24,22 @@ export function getRequestIdForMeta(req: FastifyRequest): string {
   );
 }
 
-/**
- * For `genReqId`: reuse inbound id or create a new one (e.g. UUID).
- */
 export function getOrCreateRequestId(
   headers: IncomingHttpHeaders,
   create: () => string,
 ): string {
   return readRequestIdFromHeaders(headers) ?? create();
+}
+
+export function createInboundAbortSignal(req: FastifyRequest): AbortSignal {
+  const controller = new AbortController();
+  const raw = req.raw;
+  const abort = () => controller.abort();
+  raw.on('aborted', abort);
+  raw.on('close', () => {
+    if (!raw.complete) {
+      abort();
+    }
+  });
+  return controller.signal;
 }

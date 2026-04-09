@@ -1,6 +1,5 @@
 import type { SendFileByUrlBody, SendMessageBody } from './green-api.schemas';
 
-/** Maps gateway DTOs to GREEN-API upstream JSON field names. */
 export function toSendMessageUpstream(body: SendMessageBody): Record<string, string> {
   return {
     chatId: body.chatId,

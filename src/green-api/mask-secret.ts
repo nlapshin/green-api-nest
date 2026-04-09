@@ -1,7 +1,3 @@
-/**
- * Redacts high-entropy secrets for logs and error surfaces.
- * Never log full apiTokenInstance.
- */
 export function maskApiToken(token: string): string {
   const t = token.trim();
   if (t.length <= 8) {

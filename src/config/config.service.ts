@@ -9,6 +9,12 @@ export interface IConfig {
   readonly logLevel: LogLevel;
   readonly requestTimeoutMs: number;
   readonly trustProxy: boolean;
+  readonly inboundRequestTimeoutMs: number;
+  readonly outboundRetryMaxAttempts: number;
+  readonly outboundRetryInitialMs: number;
+  readonly outboundRetryMaxMs: number;
+  readonly outboundRetryJitter: number;
+  readonly outboundRetryOn429: boolean;
 }
 
 @Injectable()
@@ -24,6 +30,12 @@ export class ConfigService {
       logLevel: this.envService.logLevel,
       requestTimeoutMs: this.envService.requestTimeoutMs,
       trustProxy: this.envService.trustProxy,
+      inboundRequestTimeoutMs: this.envService.inboundRequestTimeoutMs,
+      outboundRetryMaxAttempts: this.envService.outboundRetryMaxAttempts,
+      outboundRetryInitialMs: this.envService.outboundRetryInitialMs,
+      outboundRetryMaxMs: this.envService.outboundRetryMaxMs,
+      outboundRetryJitter: this.envService.outboundRetryJitter,
+      outboundRetryOn429: this.envService.outboundRetryOn429,
     };
   }
 
@@ -53,6 +65,30 @@ export class ConfigService {
 
   get trustProxy(): boolean {
     return this.config.trustProxy;
+  }
+
+  get inboundRequestTimeoutMs(): number {
+    return this.config.inboundRequestTimeoutMs;
+  }
+
+  get outboundRetryMaxAttempts(): number {
+    return this.config.outboundRetryMaxAttempts;
+  }
+
+  get outboundRetryInitialMs(): number {
+    return this.config.outboundRetryInitialMs;
+  }
+
+  get outboundRetryMaxMs(): number {
+    return this.config.outboundRetryMaxMs;
+  }
+
+  get outboundRetryJitter(): number {
+    return this.config.outboundRetryJitter;
+  }
+
+  get outboundRetryOn429(): boolean {
+    return this.config.outboundRetryOn429;
   }
 
   get isDevelopment(): boolean {

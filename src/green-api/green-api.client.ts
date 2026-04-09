@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
 import { HttpClientService } from '../http-client/http-client.service';
 import type { HttpClientCallResult } from '../http-client/http-client.types';
-import { maskUrlSensitive } from './mask-secret';
+import type { GreenApiCallContext } from './green-api-context';
 import { toSendFileByUrlUpstream, toSendMessageUpstream } from './green-api.mapper';
+import { maskUrlSensitive } from './mask-secret';
 import type {
   GetSettingsBody,
   GetStateInstanceBody,
@@ -18,42 +19,66 @@ export class GreenApiClient {
     private readonly http: HttpClientService,
   ) {}
 
-  async getSettings(body: GetSettingsBody): Promise<HttpClientCallResult> {
-    return this.call({
-      httpMethod: 'GET',
-      idInstance: body.idInstance,
-      apiTokenInstance: body.apiTokenInstance,
-      pathMethod: 'getSettings',
-    });
+  async getSettings(
+    body: GetSettingsBody,
+    ctx: GreenApiCallContext,
+  ): Promise<HttpClientCallResult> {
+    return this.call(
+      {
+        httpMethod: 'GET',
+        idInstance: body.idInstance,
+        apiTokenInstance: body.apiTokenInstance,
+        pathMethod: 'getSettings',
+      },
+      ctx,
+    );
   }
 
-  async getStateInstance(body: GetStateInstanceBody): Promise<HttpClientCallResult> {
-    return this.call({
-      httpMethod: 'GET',
-      idInstance: body.idInstance,
-      apiTokenInstance: body.apiTokenInstance,
-      pathMethod: 'getStateInstance',
-    });
+  async getStateInstance(
+    body: GetStateInstanceBody,
+    ctx: GreenApiCallContext,
+  ): Promise<HttpClientCallResult> {
+    return this.call(
+      {
+        httpMethod: 'GET',
+        idInstance: body.idInstance,
+        apiTokenInstance: body.apiTokenInstance,
+        pathMethod: 'getStateInstance',
+      },
+      ctx,
+    );
   }
 
-  async sendMessage(body: SendMessageBody): Promise<HttpClientCallResult> {
-    return this.call({
-      httpMethod: 'POST',
-      idInstance: body.idInstance,
-      apiTokenInstance: body.apiTokenInstance,
-      pathMethod: 'sendMessage',
-      jsonBody: toSendMessageUpstream(body),
-    });
+  async sendMessage(
+    body: SendMessageBody,
+    ctx: GreenApiCallContext,
+  ): Promise<HttpClientCallResult> {
+    return this.call(
+      {
+        httpMethod: 'POST',
+        idInstance: body.idInstance,
+        apiTokenInstance: body.apiTokenInstance,
+        pathMethod: 'sendMessage',
+        jsonBody: toSendMessageUpstream(body),
+      },
+      ctx,
+    );
   }
 
-  async sendFileByUrl(body: SendFileByUrlBody): Promise<HttpClientCallResult> {
-    return this.call({
-      httpMethod: 'POST',
-      idInstance: body.idInstance,
-      apiTokenInstance: body.apiTokenInstance,
-      pathMethod: 'sendFileByUrl',
-      jsonBody: toSendFileByUrlUpstream(body),
-    });
+  async sendFileByUrl(
+    body: SendFileByUrlBody,
+    ctx: GreenApiCallContext,
+  ): Promise<HttpClientCallResult> {
+    return this.call(
+      {
+        httpMethod: 'POST',
+        idInstance: body.idInstance,
+        apiTokenInstance: body.apiTokenInstance,
+        pathMethod: 'sendFileByUrl',
+        jsonBody: toSendFileByUrlUpstream(body),
+      },
+      ctx,
+    );
   }
 
   private buildUrl(pathMethod: string, idInstance: string, token: string): string {
@@ -61,13 +86,16 @@ export class GreenApiClient {
     return `${base}/waInstance${idInstance}/${pathMethod}/${token}`;
   }
 
-  private async call(params: {
-    httpMethod: 'GET' | 'POST';
-    idInstance: string;
-    apiTokenInstance: string;
-    pathMethod: string;
-    jsonBody?: Record<string, string>;
-  }): Promise<HttpClientCallResult> {
+  private async call(
+    params: {
+      httpMethod: 'GET' | 'POST';
+      idInstance: string;
+      apiTokenInstance: string;
+      pathMethod: string;
+      jsonBody?: Record<string, string>;
+    },
+    ctx: GreenApiCallContext,
+  ): Promise<HttpClientCallResult> {
     const url = this.buildUrl(
       params.pathMethod,
       params.idInstance,
@@ -85,6 +113,10 @@ export class GreenApiClient {
         idInstance: params.idInstance,
         method: params.httpMethod,
       },
+      metricsOperation: params.pathMethod,
+      metricsTarget: 'green_api',
+      requestId: ctx.requestId,
+      inboundSignal: ctx.signal,
       exposeUpstreamError: 'GREEN-API returned an error',
     });
   }

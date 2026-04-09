@@ -10,6 +10,11 @@ import { GreenApiClient } from './green-api.client';
 
 const validToken = 't'.repeat(24);
 
+const testCtx = {
+  requestId: 'unit-test-req',
+  signal: new AbortController().signal,
+};
+
 function baseConfig(overrides: Partial<IConfig> = {}): IConfig {
   return {
     nodeEnv: 'test',
@@ -19,6 +24,12 @@ function baseConfig(overrides: Partial<IConfig> = {}): IConfig {
     logLevel: 'silent',
     requestTimeoutMs: 2000,
     trustProxy: false,
+    inboundRequestTimeoutMs: 0,
+    outboundRetryMaxAttempts: 1,
+    outboundRetryInitialMs: 10,
+    outboundRetryMaxMs: 50,
+    outboundRetryJitter: 0.1,
+    outboundRetryOn429: false,
     ...overrides,
   };
 }
@@ -31,6 +42,21 @@ function mockConfigService(overrides: Partial<IConfig> = {}): ConfigService {
     },
     get requestTimeoutMs() {
       return c.requestTimeoutMs;
+    },
+    get outboundRetryMaxAttempts() {
+      return c.outboundRetryMaxAttempts;
+    },
+    get outboundRetryInitialMs() {
+      return c.outboundRetryInitialMs;
+    },
+    get outboundRetryMaxMs() {
+      return c.outboundRetryMaxMs;
+    },
+    get outboundRetryJitter() {
+      return c.outboundRetryJitter;
+    },
+    get outboundRetryOn429() {
+      return c.outboundRetryOn429;
     },
   } as unknown as ConfigService;
 }
@@ -48,7 +74,7 @@ function createClient(
   config: ConfigService,
   agent: MockAgent,
 ): GreenApiClient {
-  const http = new HttpClientService(mockLogger(), agent);
+  const http = new HttpClientService(mockLogger(), config, agent);
   return new GreenApiClient(config, http);
 }
 
@@ -78,10 +104,13 @@ describe('GreenApiClient', () => {
       .reply(200, { ok: true, nested: { a: 1 } });
 
     const client = createClient(mockConfigService(), agent);
-    const res = await client.getSettings({
-      idInstance: '123456',
-      apiTokenInstance: validToken,
-    });
+    const res = await client.getSettings(
+      {
+        idInstance: '123456',
+        apiTokenInstance: validToken,
+      },
+      testCtx,
+    );
 
     expect(res.statusCode).toBe(200);
     expect(res.payload).toEqual({ ok: true, nested: { a: 1 } });
@@ -98,10 +127,13 @@ describe('GreenApiClient', () => {
 
     const client = createClient(mockConfigService(), agent);
     await expect(
-      client.getSettings({
-        idInstance: '123456',
-        apiTokenInstance: validToken,
-      }),
+      client.getSettings(
+        {
+          idInstance: '123456',
+          apiTokenInstance: validToken,
+        },
+        testCtx,
+      ),
     ).rejects.toBeInstanceOf(HttpUpstreamException);
   });
 
@@ -116,10 +148,13 @@ describe('GreenApiClient', () => {
 
     const client = createClient(mockConfigService(), agent);
     await expect(
-      client.getSettings({
-        idInstance: '123456',
-        apiTokenInstance: validToken,
-      }),
+      client.getSettings(
+        {
+          idInstance: '123456',
+          apiTokenInstance: validToken,
+        },
+        testCtx,
+      ),
     ).rejects.toBeInstanceOf(HttpUpstreamException);
   });
 
@@ -135,10 +170,13 @@ describe('GreenApiClient', () => {
       });
 
     const client = createClient(mockConfigService(), agent);
-    const res = await client.getSettings({
-      idInstance: '123456',
-      apiTokenInstance: validToken,
-    });
+    const res = await client.getSettings(
+      {
+        idInstance: '123456',
+        apiTokenInstance: validToken,
+      },
+      testCtx,
+    );
 
     expect(res.payload).toEqual({ rawText: 'plain-text-not-json' });
   });
@@ -150,10 +188,13 @@ describe('GreenApiClient', () => {
     );
 
     await expect(
-      client.getSettings({
-        idInstance: '123456',
-        apiTokenInstance: validToken,
-      }),
+      client.getSettings(
+        {
+          idInstance: '123456',
+          apiTokenInstance: validToken,
+        },
+        testCtx,
+      ),
     ).rejects.toBeInstanceOf(HttpNetworkException);
   });
 });

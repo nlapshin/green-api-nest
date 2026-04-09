@@ -1,184 +1,151 @@
-const layout = document.querySelector('.layout');
-const apiBase = layout?.dataset.apiBase ?? '/api/v1/green-api';
+const page = document.querySelector('.page');
+const apiBase = (page?.dataset.apiBase ?? '/api/v1/green-api').replace(/\/$/, '');
 
-const els = {
-  idInstance: document.getElementById('idInstance'),
-  apiTokenInstance: document.getElementById('apiTokenInstance'),
-  chatIdMessage: document.getElementById('chatIdMessage'),
-  messageBody: document.getElementById('messageBody'),
-  chatIdFile: document.getElementById('chatIdFile'),
-  fileUrl: document.getElementById('fileUrl'),
-  fileName: document.getElementById('fileName'),
-  caption: document.getElementById('caption'),
-  responseBody: document.getElementById('responseBody'),
-  lastStatus: document.getElementById('lastStatus'),
-  lastDuration: document.getElementById('lastDuration'),
-  copyResponse: document.getElementById('copyResponse'),
-  clearResponse: document.getElementById('clearResponse'),
-  toast: document.getElementById('toast'),
-};
+const $ = (id) => document.getElementById(id);
 
-/** @type {AbortController | null} */
-let inFlight = null;
-
-function setBusy(busy) {
-  document.querySelectorAll('button.btn').forEach((btn) => {
-    btn.disabled = busy;
-  });
+function setStatus(kind, text) {
+  const el = $('status');
+  if (!el) return;
+  el.className = 'status';
+  if (kind) el.classList.add(`status--${kind}`);
+  el.textContent = text || '';
 }
 
-function showToast(message) {
-  if (!els.toast) return;
-  els.toast.textContent = message;
-  els.toast.hidden = false;
-  window.clearTimeout(showToast._t);
-  showToast._t = window.setTimeout(() => {
-    els.toast.hidden = true;
-  }, 2200);
+function setOutput(text) {
+  const out = $('output');
+  if (out) out.textContent = text || '';
+}
+
+function formatGatewayBody(body) {
+  if (body === null || body === undefined) {
+    return '';
+  }
+  if (typeof body === 'string') {
+    return body;
+  }
+  if (typeof body === 'number' || typeof body === 'boolean') {
+    return String(body);
+  }
+  try {
+    return JSON.stringify(body, null, 2);
+  } catch {
+    return String(body);
+  }
+}
+
+function setLoading(isLoading) {
+  document.querySelectorAll('button.btn').forEach((b) => {
+    b.disabled = isLoading;
+  });
+  if (isLoading) setStatus('loading', 'loading…');
 }
 
 function readCredentials() {
   return {
-    idInstance: els.idInstance?.value?.trim() ?? '',
-    apiTokenInstance: els.apiTokenInstance?.value?.trim() ?? '',
+    idInstance: $('idInstance')?.value.trim() ?? '',
+    apiTokenInstance: $('apiTokenInstance')?.value.trim() ?? '',
   };
 }
 
-function setStatus(kind, text) {
-  if (!els.lastStatus) return;
-  els.lastStatus.textContent = text;
-  els.lastStatus.classList.remove('badge--ok', 'badge--err', 'badge--muted');
-  if (kind === 'ok') els.lastStatus.classList.add('badge--ok');
-  else if (kind === 'err') els.lastStatus.classList.add('badge--err');
-  else els.lastStatus.classList.add('badge--muted');
+function readSendMessage() {
+  return {
+    chatId: $('sm_chatId')?.value.trim() ?? '',
+    message: $('sm_message')?.value ?? '',
+  };
 }
 
-async function postJson(path, body) {
-  inFlight?.abort();
-  inFlight = new AbortController();
-  const started = performance.now();
+function readSendFileByUrl() {
+  return {
+    chatId: $('sf_chatId')?.value.trim() ?? '',
+    fileUrl: $('sf_fileUrl')?.value.trim() ?? '',
+    fileName: $('sf_fileName')?.value.trim() ?? '',
+    caption: $('sf_caption')?.value.trim() ?? '',
+  };
+}
 
+async function callGateway(path, jsonBody) {
+  setLoading(true);
+  setOutput('');
   try {
     const res = await fetch(path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(body),
-      signal: inFlight.signal,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(jsonBody),
     });
-
-    const raw = await res.text();
-    let parsed;
+    const text = await res.text();
+    let data;
     try {
-      parsed = raw.length ? JSON.parse(raw) : null;
+      data = text ? JSON.parse(text) : null;
     } catch {
-      parsed = { parseError: true, raw };
+      setStatus('err', 'Ошибка: сервер вернул не-JSON');
+      setOutput(text);
+      return;
     }
-
-    const durationMs = Math.round(performance.now() - started);
-    return { res, parsed, durationMs };
+    if (data === null || typeof data !== 'object') {
+      setStatus('err', 'Ошибка: неожиданный ответ сервера');
+      setOutput(text);
+      return;
+    }
+    if (!res.ok || !data.success) {
+      const msg =
+        data?.error?.message || data?.error?.code || 'Ошибка';
+      setStatus('err', msg);
+      setOutput(JSON.stringify(data, null, 2));
+      return;
+    }
+    setStatus('ok', 'ok');
+    const d = data.data;
+    if (d != null && Object.prototype.hasOwnProperty.call(d, 'body')) {
+      setOutput(formatGatewayBody(d.body));
+    } else {
+      setOutput(JSON.stringify(d ?? data, null, 2));
+    }
+  } catch (e) {
+    setStatus('err', 'Ошибка сети');
+    setOutput(String(e));
   } finally {
-    inFlight = null;
+    setLoading(false);
   }
 }
 
-function renderResponse(parsed) {
-  if (!els.responseBody) return;
-  els.responseBody.value = JSON.stringify(parsed, null, 2);
-}
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-action]');
+  if (!btn) return;
 
-document.querySelectorAll('[data-action]').forEach((btn) => {
-  btn.addEventListener('click', async () => {
-    const action = btn.getAttribute('data-action');
-    const creds = readCredentials();
+  const action = btn.getAttribute('data-action');
+  const creds = readCredentials();
 
-    setBusy(true);
-    setStatus('muted', '…');
-    if (els.lastDuration) els.lastDuration.textContent = '';
-
-    try {
-      if (action === 'get-settings') {
-        const { res, parsed, durationMs } = await postJson(`${apiBase}/get-settings`, creds);
-        renderResponse(parsed);
-        if (els.lastDuration) els.lastDuration.textContent = `${durationMs} ms`;
-        if (res.ok && parsed?.success) setStatus('ok', `${res.status} ok`);
-        else setStatus('err', `${res.status} error`);
-        return;
-      }
-
-      if (action === 'get-state-instance') {
-        const { res, parsed, durationMs } = await postJson(
-          `${apiBase}/get-state-instance`,
-          creds,
-        );
-        renderResponse(parsed);
-        if (els.lastDuration) els.lastDuration.textContent = `${durationMs} ms`;
-        if (res.ok && parsed?.success) setStatus('ok', `${res.status} ok`);
-        else setStatus('err', `${res.status} error`);
-        return;
-      }
-
-      if (action === 'send-message') {
-        const { res, parsed, durationMs } = await postJson(`${apiBase}/send-message`, {
-          ...creds,
-          chatId: els.chatIdMessage?.value?.trim() ?? '',
-          message: els.messageBody?.value ?? '',
-        });
-        renderResponse(parsed);
-        if (els.lastDuration) els.lastDuration.textContent = `${durationMs} ms`;
-        if (res.ok && parsed?.success) setStatus('ok', `${res.status} ok`);
-        else setStatus('err', `${res.status} error`);
-        return;
-      }
-
-      if (action === 'send-file-by-url') {
-        const payload = {
-          ...creds,
-          chatId: els.chatIdFile?.value?.trim() ?? '',
-          fileUrl: els.fileUrl?.value?.trim() ?? '',
-        };
-        const fn = els.fileName?.value?.trim();
-        const cap = els.caption?.value?.trim();
-        if (fn) payload.fileName = fn;
-        if (cap) payload.caption = cap;
-
-        const { res, parsed, durationMs } = await postJson(
-          `${apiBase}/send-file-by-url`,
-          payload,
-        );
-        renderResponse(parsed);
-        if (els.lastDuration) els.lastDuration.textContent = `${durationMs} ms`;
-        if (res.ok && parsed?.success) setStatus('ok', `${res.status} ok`);
-        else setStatus('err', `${res.status} error`);
-      }
-    } catch (e) {
-      if (e?.name === 'AbortError') {
-        setStatus('muted', 'aborted');
-        return;
-      }
-      setStatus('err', 'network');
-      renderResponse({ success: false, error: { message: String(e?.message ?? e) } });
-    } finally {
-      setBusy(false);
+  if (action === 'getSettings') {
+    return callGateway(`${apiBase}/get-settings`, creds);
+  }
+  if (action === 'getStateInstance') {
+    return callGateway(`${apiBase}/get-state-instance`, creds);
+  }
+  if (action === 'sendMessage') {
+    return callGateway(`${apiBase}/send-message`, {
+      ...creds,
+      ...readSendMessage(),
+    });
+  }
+  if (action === 'sendFileByUrl') {
+    const fn = $('sf_fileName');
+    if (fn && !fn.value.trim()) {
+      fn.reportValidity();
+      setStatus('err', 'Укажите fileName');
+      setOutput('');
+      return;
     }
-  });
-});
-
-els.copyResponse?.addEventListener('click', async () => {
-  const text = els.responseBody?.value ?? '';
-  if (!text) {
-    showToast('Нечего копировать');
-    return;
+    const p = readSendFileByUrl();
+    const body = {
+      ...creds,
+      chatId: p.chatId,
+      fileUrl: p.fileUrl,
+    };
+    if (p.fileName) body.fileName = p.fileName;
+    if (p.caption) body.caption = p.caption;
+    return callGateway(`${apiBase}/send-file-by-url`, body);
   }
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast('Скопировано');
-  } catch {
-    showToast('Не удалось скопировать');
-  }
-});
-
-els.clearResponse?.addEventListener('click', () => {
-  if (els.responseBody) els.responseBody.value = '';
-  setStatus('muted', 'idle');
-  if (els.lastDuration) els.lastDuration.textContent = '';
 });

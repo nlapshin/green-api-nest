@@ -1,12 +1,16 @@
 import { Inject, Injectable, OnModuleDestroy, Optional } from '@nestjs/common';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { Dispatcher } from 'undici';
 import { Agent, request } from 'undici';
+import { ConfigService } from '../config/config.service';
+import { MetricsService } from '../metrics/metrics.service';
 import {
   HttpNetworkException,
   HttpTimeoutException,
   HttpUpstreamException,
 } from './http-client.errors';
+import { computeBackoffMs, shouldRetryOutboundError } from './retry-policy';
 import {
   HTTP_CLIENT_DISPATCHER,
   type HttpClientCallResult,
@@ -29,6 +33,33 @@ function isUndiciTimeout(err: unknown): boolean {
   );
 }
 
+function combineSignals(
+  timeoutMs: number,
+  inbound?: AbortSignal,
+): { signal: AbortSignal; cancelTimeout: () => void } {
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const cancelTimeout = () => clearTimeout(timer);
+  if (!inbound) {
+    return { signal: timeoutController.signal, cancelTimeout };
+  }
+  return {
+    signal: AbortSignal.any([inbound, timeoutController.signal]),
+    cancelTimeout,
+  };
+}
+
+function outboundTerminalReason(err: unknown): string {
+  if (err instanceof HttpTimeoutException) return 'timeout';
+  if (err instanceof HttpNetworkException) return 'network';
+  if (err instanceof HttpUpstreamException) {
+    if (err.upstreamHttpStatus === 429) return 'rate_limit';
+    if (err.upstreamHttpStatus >= 500) return 'server_error';
+    return 'client_error';
+  }
+  return 'unknown';
+}
+
 @Injectable()
 export class HttpClientService implements OnModuleDestroy {
   private readonly dispatcher: Dispatcher;
@@ -36,7 +67,9 @@ export class HttpClientService implements OnModuleDestroy {
 
   constructor(
     @InjectPinoLogger(HttpClientService.name) private readonly logger: PinoLogger,
+    private readonly configService: ConfigService,
     @Optional() @Inject(HTTP_CLIENT_DISPATCHER) injectedDispatcher?: Dispatcher,
+    @Optional() private readonly metrics?: MetricsService,
   ) {
     if (injectedDispatcher) {
       this.dispatcher = injectedDispatcher;
@@ -58,6 +91,75 @@ export class HttpClientService implements OnModuleDestroy {
   }
 
   async execute(params: HttpClientExecuteParams): Promise<HttpClientCallResult> {
+    const maxAttempts = Math.max(1, this.configService.outboundRetryMaxAttempts);
+    const retryOn429 = this.configService.outboundRetryOn429;
+    const target = params.metricsTarget ?? 'green_api';
+    const operation = params.metricsOperation;
+    let attempt = 0;
+    let lastError: unknown;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        return await this.executeOnce(params);
+      } catch (err) {
+        lastError = err;
+        const canRetry = shouldRetryOutboundError(
+          err,
+          attempt,
+          maxAttempts,
+          retryOn429,
+        );
+        if (!canRetry) {
+          this.metrics?.recordOutboundTerminalError(
+            target,
+            operation,
+            outboundTerminalReason(err),
+          );
+          throw err;
+        }
+        if (params.inboundSignal?.aborted) {
+          this.metrics?.recordOutboundTerminalError(
+            target,
+            operation,
+            'cancelled',
+          );
+          throw err;
+        }
+        const waitMs = computeBackoffMs({
+          attemptIndex: attempt - 1,
+          initialMs: this.configService.outboundRetryInitialMs,
+          maxMs: this.configService.outboundRetryMaxMs,
+          jitterRatio: this.configService.outboundRetryJitter,
+        });
+        try {
+          if (params.inboundSignal) {
+            await sleep(waitMs, { signal: params.inboundSignal });
+          } else {
+            await sleep(waitMs);
+          }
+        } catch {
+          this.metrics?.recordOutboundTerminalError(
+            target,
+            operation,
+            'cancelled',
+          );
+          throw lastError;
+        }
+      }
+    }
+
+    this.metrics?.recordOutboundTerminalError(
+      target,
+      operation,
+      outboundTerminalReason(lastError),
+    );
+    throw lastError;
+  }
+
+  private async executeOnce(
+    params: HttpClientExecuteParams,
+  ): Promise<HttpClientCallResult> {
     const {
       url,
       safeUrlForLog,
@@ -67,48 +169,60 @@ export class HttpClientService implements OnModuleDestroy {
       logScope,
       logContext,
       exposeUpstreamError,
+      requestId,
+      inboundSignal,
     } = params;
+    const target = params.metricsTarget ?? 'green_api';
+    const operation = params.metricsOperation;
     const started = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const { signal, cancelTimeout } = combineSignals(timeoutMs, inboundSignal);
+
+    const logBase = {
+      outbound: true,
+      requestId,
+      ...logContext,
+    };
 
     try {
       this.logger.info(
         {
-          outbound: true,
+          ...logBase,
           method,
           url: safeUrlForLog,
-          ...logContext,
         },
         `${logScope} request start`,
       );
 
+      const headers: Record<string, string> = {
+        accept: 'application/json, text/plain;q=0.9,*/*;q=0.8',
+        ...(method === 'POST'
+          ? { 'content-type': 'application/json; charset=utf-8' }
+          : {}),
+      };
+      if (requestId) {
+        headers['x-request-id'] = requestId;
+      }
+
       const res = await request(url, {
         method,
         dispatcher: this.dispatcher,
-        signal: controller.signal,
-        headers: {
-          accept: 'application/json, text/plain;q=0.9,*/*;q=0.8',
-          ...(method === 'POST'
-            ? { 'content-type': 'application/json; charset=utf-8' }
-            : {}),
-        },
+        signal,
+        headers,
         body: method === 'POST' && jsonBody ? JSON.stringify(jsonBody) : undefined,
         headersTimeout: timeoutMs,
         bodyTimeout: timeoutMs,
       });
 
-      const durationMs = Math.round(performance.now() - started);
       const text = await res.body.text();
       const contentType =
         (res.headers['content-type'] as string | undefined) ?? null;
+      const durationMs = Math.round(performance.now() - started);
 
       this.logger.info(
         {
-          outbound: true,
+          ...logBase,
           statusCode: res.statusCode,
           durationMs,
-          ...logContext,
         },
         `${logScope} request end`,
       );
@@ -116,10 +230,9 @@ export class HttpClientService implements OnModuleDestroy {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         this.logger.warn(
           {
-            outbound: true,
+            ...logBase,
             statusCode: res.statusCode,
-            bodyChars: Math.min(text.length, 2048),
-            ...logContext,
+            durationMs,
           },
           `${logScope} non-success status`,
         );
@@ -140,9 +253,17 @@ export class HttpClientService implements OnModuleDestroy {
     } catch (err: unknown) {
       const durationMs = Math.round(performance.now() - started);
 
-      if (controller.signal.aborted || isAbortError(err)) {
+      if (inboundSignal?.aborted && !isUndiciTimeout(err)) {
         this.logger.warn(
-          { outbound: true, durationMs, ...logContext },
+          { ...logBase, durationMs },
+          `${logScope} inbound cancelled`,
+        );
+        throw new HttpTimeoutException();
+      }
+
+      if (signal.aborted || isAbortError(err)) {
+        this.logger.warn(
+          { ...logBase, durationMs },
           `${logScope} request aborted (timeout)`,
         );
         throw new HttpTimeoutException();
@@ -150,7 +271,7 @@ export class HttpClientService implements OnModuleDestroy {
 
       if (isUndiciTimeout(err)) {
         this.logger.warn(
-          { outbound: true, durationMs, ...logContext },
+          { ...logBase, durationMs },
           `${logScope} undici timeout`,
         );
         throw new HttpTimeoutException();
@@ -161,12 +282,14 @@ export class HttpClientService implements OnModuleDestroy {
       }
 
       this.logger.error(
-        { err, outbound: true, durationMs, ...logContext },
+        { err, ...logBase, durationMs },
         `${logScope} transport error`,
       );
       throw new HttpNetworkException(err);
     } finally {
-      clearTimeout(timer);
+      cancelTimeout();
+      const durationSec = (performance.now() - started) / 1000;
+      this.metrics?.recordOutboundAttempt(target, operation, durationSec);
     }
   }
 

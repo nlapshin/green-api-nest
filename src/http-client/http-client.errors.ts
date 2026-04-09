@@ -2,27 +2,37 @@ import { AppException } from '../errors/app.exception';
 import { ErrorCodes } from '../errors/error-codes';
 
 export class HttpUpstreamException extends AppException {
+  readonly upstreamHttpStatus: number;
+
   constructor(params: {
     statusCode: number;
     message: string;
     exposeMessage?: string;
     details?: unknown[];
   }) {
-    const isServer = params.statusCode >= 500;
-    super({
-      code: isServer
+    const status = params.statusCode;
+    const is429 = status === 429;
+    const isServer = status >= 500;
+    const code = is429
+      ? ErrorCodes.UPSTREAM_RATE_LIMIT
+      : isServer
         ? ErrorCodes.UPSTREAM_SERVER_ERROR
-        : ErrorCodes.UPSTREAM_CLIENT_ERROR,
+        : ErrorCodes.UPSTREAM_CLIENT_ERROR;
+    super({
+      code,
       httpStatus: 502,
       message: params.message,
       exposeMessage:
         params.exposeMessage ??
-        (isServer
-          ? 'Upstream returned a server error'
-          : 'Upstream rejected the request'),
-      details: params.details,
+        (is429
+          ? 'Upstream rate limited the request'
+          : isServer
+            ? 'Upstream returned a server error'
+            : 'Upstream rejected the request'),
+      details: params.details ?? [{ upstreamStatus: status }],
     });
     this.name = 'HttpUpstreamException';
+    this.upstreamHttpStatus = status;
   }
 }
 

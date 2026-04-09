@@ -7,6 +7,13 @@ import { getOrCreateRequestId } from './request-id';
 type RequestWithId = IncomingMessage & { id?: string };
 type ResponseWithStatus = ServerResponse & { statusCode: number };
 
+function pathOnly(url: string | undefined): string {
+  if (!url) {
+    return '';
+  }
+  return url.split('?')[0] ?? url;
+}
+
 export function createPinoLoggerOptions(config: ConfigService): Params {
   const prettyTransport = config.isDevelopment
     ? {
@@ -33,8 +40,14 @@ export function createPinoLoggerOptions(config: ConfigService): Params {
         res: serializeResponse,
       },
       autoLogging: {
-        ignore: (req) =>
-          req.url === '/healthz' || req.url === '/readyz',
+        ignore: (req) => {
+          const p = pathOnly(req.url);
+          return (
+            p === '/healthz' ||
+            p === '/readyz' ||
+            p === '/metrics'
+          );
+        },
       },
     },
     pino: {

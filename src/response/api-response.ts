@@ -1,11 +1,9 @@
-/** Wire-format success envelope for JSON API responses. */
 export interface ApiSuccessEnvelope<T = unknown> {
   success: true;
   data: T;
   meta: { requestId: string };
 }
 
-/** Wire-format error envelope for JSON API responses. */
 export interface ApiErrorEnvelope {
   success: false;
   error: {

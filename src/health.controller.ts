@@ -14,6 +14,7 @@ export class HealthController {
   liveness() {
     return {
       status: 'live',
+      kind: 'liveness',
       version: appVersion,
     };
   }
@@ -22,6 +23,8 @@ export class HealthController {
   readiness() {
     return {
       status: 'ready',
+      kind: 'readiness',
+      checks: {},
     };
   }
 }
